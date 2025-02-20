@@ -33,7 +33,7 @@ import { ParamDefine } from '../../../pojo/ParamDefine';
   templateUrl: './monitor-form.component.html',
   styleUrls: ['./monitor-form.component.less']
 })
-export class MonitorFormComponent implements OnChanges {
+export class MonitorFormComponent {
   @Input() monitor!: Monitor;
   @Input() grafanaDashboard!: any;
   @Input() loading!: boolean;
@@ -52,7 +52,8 @@ export class MonitorFormComponent implements OnChanges {
   @Output() readonly formDetect = new EventEmitter<any>();
   @Output() readonly hostChange = new EventEmitter<string>();
   @Output() readonly collectorChange = new EventEmitter<string>();
-
+  @Output() nameInput = new EventEmitter<void>();
+  
   hasAdvancedParams: boolean = false;
 
   constructor(private notifySvc: NzNotificationService, @Inject(ALAIN_I18N_TOKEN) private i18nSvc: I18NService) {}

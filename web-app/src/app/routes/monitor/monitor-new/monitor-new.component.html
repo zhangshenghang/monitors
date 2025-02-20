@@ -39,7 +39,9 @@
   [collector]="collector"
   [collectors]="collectors"
   (hostChange)="onHostChange($event)"
+  (nameInput)="onNameInput()"
   (formCancel)="onCancel()"
   (formSubmit)="onSubmit($event)"
   (formDetect)="onDetect($event)"
-/>
+>
+</app-monitor-form>

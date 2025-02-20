@@ -49,6 +49,7 @@
             }"
             [name]="'name'"
             [(ngModel)]="monitor.name"
+            (ngModelChange)="nameInput.emit()"
           />
         </nz-form-control>
       </nz-form-item>
