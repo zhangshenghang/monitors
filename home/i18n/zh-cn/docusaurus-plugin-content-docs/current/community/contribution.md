@@ -58,7 +58,9 @@ limitations under the License.
 
 3. 在项目根目录运行编译: `mvn clean install -DskipTests`
 
-4. 启动`springboot manager`服务 `manager/src/main/java/org/apache/hertzbeat/hertzbeat-manager/Manager.java`
+4. 在 `jvm` 加入参数 `--add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED`
+
+5. 启动`springboot manager`服务 `manager/src/main/java/org/apache/hertzbeat/hertzbeat-manager/Manager.java`
 
 #### 前端启动
 
@@ -70,11 +72,9 @@ limitations under the License.
 
 4. 在前端工程目录 `web-app` 下执行: `yarn install` or `yarn install --registry=https://registry.npmmirror.com` in `web-app`
 
-5. 全局安装 `angular-cli`: `yarn global add @angular/cli@15` or `yarn global add @angular/cli@15 --registry=https://registry.npmmirror.com`
+5. 待本地后端启动后，在 web-app 目录下启动本地前端 `yarn start`
 
-6. 待本地后端启动后，在 web-app 目录下启动本地前端 `ng serve --open`
-
-7. 浏览器访问 localhost:4200 即可开始，默认账号密码 **admin/hertzbeat**
+6. 浏览器访问 localhost:4200 即可开始，默认账号密码 **admin/hertzbeat**
 
 ### 寻找任务
 

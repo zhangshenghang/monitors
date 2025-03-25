@@ -29,7 +29,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class FtpProtocol implements CommonRequestProtocol {
+public class FtpProtocol implements CommonRequestProtocol, Protocol {
     /**
      * Peer host ip or domain name
      */
@@ -59,4 +59,10 @@ public class FtpProtocol implements CommonRequestProtocol {
      * Timeout
      */
     private String timeout;
+
+    /**
+     * Whether ftp uses link encryption ssl/tls, i.e. ftp or sftp
+     *
+     */
+    private String ssl = "false";
 }

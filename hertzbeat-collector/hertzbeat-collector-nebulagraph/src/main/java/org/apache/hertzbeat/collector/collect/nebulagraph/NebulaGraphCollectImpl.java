@@ -74,7 +74,7 @@ public class NebulaGraphCollectImpl extends AbstractCollect {
     }
 
     @Override
-    public void collect(CollectRep.MetricsData.Builder builder, long monitorId, String app, Metrics metrics) {
+    public void collect(CollectRep.MetricsData.Builder builder, Metrics metrics) {
         long startTime = System.currentTimeMillis();
         NebulaGraphProtocol nebulaGraph = metrics.getNebulaGraph();
         String timePeriod = nebulaGraph.getTimePeriod();
@@ -94,13 +94,11 @@ public class NebulaGraphCollectImpl extends AbstractCollect {
         String resp;
         long responseTime;
         HashMap<String, String> resultMap = new HashMap<>(64);
-        CloseableHttpResponse response;
         HttpContext httpContext = createHttpContext(nebulaGraph.getHost(), nebulaGraph.getPort());
         HttpUriRequest request = createHttpRequest(nebulaGraph.getHost(), nebulaGraph.getPort(),
                 nebulaGraph.getUrl(), nebulaGraph.getTimeout());
-        try {
-            // Send an HTTP request to obtain response data
-            response = CommonHttpClient.getHttpClient().execute(request, httpContext);
+        // Send an HTTP request to obtain response data
+        try (CloseableHttpResponse response = CommonHttpClient.getHttpClient().execute(request, httpContext)) {
             int statusCode = response.getStatusLine().getStatusCode();
             if (statusCode != SUCCESS_CODE) {
                 builder.setCode(CollectRep.Code.FAIL);
@@ -120,9 +118,9 @@ public class NebulaGraphCollectImpl extends AbstractCollect {
             CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();
             for (String field : aliasFields) {
                 String fieldValue = resultMap.get(field);
-                valueRowBuilder.addColumns(Objects.requireNonNullElse(fieldValue, CommonConstants.NULL_VALUE));
+                valueRowBuilder.addColumn(Objects.requireNonNullElse(fieldValue, CommonConstants.NULL_VALUE));
             }
-            builder.addValues(valueRowBuilder.build());
+            builder.addValueRow(valueRowBuilder.build());
         } catch (IOException e) {
             String errorMsg = CommonUtil.getMessageFromThrowable(e);
             log.info(errorMsg);

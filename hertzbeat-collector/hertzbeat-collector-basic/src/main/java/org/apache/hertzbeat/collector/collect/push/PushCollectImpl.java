@@ -75,9 +75,9 @@ public class PushCollectImpl extends AbstractCollect {
 
     @Override
     public void collect(CollectRep.MetricsData.Builder builder,
-                        long monitorId, String app, Metrics metrics) {
+                        Metrics metrics) {
         long curTime = System.currentTimeMillis();
-
+        long monitorId = builder.getId();
         PushProtocol pushProtocol = metrics.getPush();
 
         Long time = timeMap.getOrDefault(monitorId, curTime - firstCollectInterval);
@@ -86,8 +86,7 @@ public class PushCollectImpl extends AbstractCollect {
         HttpContext httpContext = createHttpContext(pushProtocol);
         HttpUriRequest request = createHttpRequest(pushProtocol, monitorId, time);
 
-        try {
-            CloseableHttpResponse response = CommonHttpClient.getHttpClient().execute(request, httpContext);
+        try (CloseableHttpResponse response = CommonHttpClient.getHttpClient().execute(request, httpContext)) {
             int statusCode = response.getStatusLine().getStatusCode();
             if (statusCode != SUCCESS_CODE) {
                 builder.setCode(CollectRep.Code.FAIL);
@@ -169,7 +168,6 @@ public class PushCollectImpl extends AbstractCollect {
             throw new NullPointerException("parse result is null");
         }
         for (PushMetricsDto.Metrics pushMetrics : pushMetricsDto.getMetricsList()) {
-            List<CollectRep.ValueRow> rows = new ArrayList<>();
             for (Map<String, String> metrics : pushMetrics.getMetrics()) {
                 List<String> metricColumn = new ArrayList<>();
                 for (Metrics.Field field : metric.getFields()) {
@@ -177,11 +175,8 @@ public class PushCollectImpl extends AbstractCollect {
                 }
                 CollectRep.ValueRow valueRow = CollectRep.ValueRow.newBuilder()
                         .addAllColumns(metricColumn).build();
-                rows.add(valueRow);
+                builder.addValueRow(valueRow);
             }
-
-
-            builder.addAllValues(rows);
         }
         builder.setTime(System.currentTimeMillis());
     }

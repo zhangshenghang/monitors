@@ -92,7 +92,8 @@
             "help/dns",
             "help/ftp",
             "help/websocket",
-            "help/mqtt"
+            "help/mqtt",
+            "help/modbus"
           ]
         },
         {
@@ -158,6 +159,13 @@
         },
         {
           "type": "category",
+          "label": "server",
+          "items": [
+            "help/ipmi"
+          ]
+        },
+        {
+          "type": "category",
           "label": "mid",
           "items": [
             "help/activemq",
@@ -188,6 +196,8 @@
             "help/clickhouse",
             "help/doris_be",
             "help/doris_fe",
+            "help/starrocks_be",
+            "help/starrocks_fe",
             "help/elasticsearch",
             "help/flink",
             "help/flink_on_yarn",
@@ -257,6 +267,7 @@
           "label": "notice",
           "items": [
             "help/alert_email",
+            "help/alert_sms",
             "help/alert_webhook",
             "help/alert_discord",
             "help/alert_slack",

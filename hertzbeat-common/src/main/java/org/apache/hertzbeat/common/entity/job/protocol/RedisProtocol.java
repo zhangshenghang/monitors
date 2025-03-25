@@ -21,6 +21,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.apache.hertzbeat.common.entity.job.SshTunnel;
 
 /**
  * Redis Protocol
@@ -29,7 +30,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class RedisProtocol implements CommonRequestProtocol {
+public class RedisProtocol implements CommonRequestProtocol, Protocol {
 
     /**
      * IP ADDRESS OR DOMAIN NAME OF THE PEER HOST
@@ -60,5 +61,10 @@ public class RedisProtocol implements CommonRequestProtocol {
      * TIME OUT PERIOD
      */
     private String timeout;
+
+    /**
+     * SSH TUNNEL
+     */
+    private SshTunnel sshTunnel;
 
 }

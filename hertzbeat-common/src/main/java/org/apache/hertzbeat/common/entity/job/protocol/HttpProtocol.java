@@ -31,7 +31,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class HttpProtocol implements CommonRequestProtocol {
+public class HttpProtocol implements CommonRequestProtocol, Protocol {
     /**
      * Peer host ip or domain name
      */
@@ -94,6 +94,12 @@ public class HttpProtocol implements CommonRequestProtocol {
      * successCode means what http response status code we consider it collect success.
      */
     private List<String> successCodes;
+
+    /**
+     * Whether to enable URL encoding for the path. Default is true.
+     * When true, the URL path will be encoded. When false, the URL path will not be encoded.
+     */
+    private String enableUrlEncoding = "true";
 
     /**
      * authentication information

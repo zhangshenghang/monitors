@@ -32,7 +32,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.net.ssl.SSLException;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.net.util.Base64;
 import org.apache.hertzbeat.collector.collect.common.http.CommonHttpClient;
 import org.apache.hertzbeat.collector.collect.prometheus.parser.MetricFamily;
 import org.apache.hertzbeat.collector.collect.prometheus.parser.TextParser;
@@ -44,6 +43,7 @@ import org.apache.hertzbeat.common.constants.SignConstants;
 import org.apache.hertzbeat.common.entity.job.Metrics;
 import org.apache.hertzbeat.common.entity.job.protocol.PrometheusProtocol;
 import org.apache.hertzbeat.common.entity.message.CollectRep;
+import org.apache.hertzbeat.common.util.Base64Util;
 import org.apache.hertzbeat.common.util.CommonUtil;
 import org.apache.hertzbeat.common.util.IpDomainUtil;
 import org.apache.http.HttpHeaders;
@@ -89,9 +89,8 @@ public class PrometheusAutoCollectImpl {
         }
         HttpContext httpContext = createHttpContext(metrics.getPrometheus());
         HttpUriRequest request = createHttpRequest(metrics.getPrometheus());
-        try {
-            CloseableHttpResponse response = CommonHttpClient.getHttpClient()
-                                                     .execute(request, httpContext);
+        try (CloseableHttpResponse response =
+             CommonHttpClient.getHttpClient().execute(request, httpContext)) {
             int statusCode = response.getStatusLine().getStatusCode();
             boolean isSuccessInvoke = defaultSuccessStatusCodes.contains(statusCode);
             log.debug("http response status: {}", statusCode);
@@ -174,7 +173,6 @@ public class PrometheusAutoCollectImpl {
         Map<String, MetricFamily> metricFamilyMap = TextParser.textToMetricFamilies(resp);
         List<CollectRep.MetricsData> metricsDataList = new LinkedList<>();
         for (Map.Entry<String, MetricFamily> entry : metricFamilyMap.entrySet()) {
-            builder.clearMetrics();
             builder.clearFields();
             builder.clearValues();
             String metricsName = entry.getKey();
@@ -187,10 +185,10 @@ public class PrometheusAutoCollectImpl {
                     if (index == 0) {
                         metric.getLabels().forEach(label -> {
                             metricsFields.add(label.getName());
-                            builder.addFields(CollectRep.Field.newBuilder().setName(label.getName())
+                            builder.addField(CollectRep.Field.newBuilder().setName(label.getName())
                                     .setType(CommonConstants.TYPE_STRING).setLabel(true).build());
                         });
-                        builder.addFields(CollectRep.Field.newBuilder().setName("value")
+                        builder.addField(CollectRep.Field.newBuilder().setName("value")
                                 .setType(CommonConstants.TYPE_NUMBER).setLabel(false).build());
                     }
                     Map<String, String> labelMap = metric.getLabels()
@@ -199,10 +197,10 @@ public class PrometheusAutoCollectImpl {
                     CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();
                     for (String field : metricsFields) {
                         String fieldValue = labelMap.get(field);
-                        valueRowBuilder.addColumns(fieldValue == null ? CommonConstants.NULL_VALUE : fieldValue);
+                        valueRowBuilder.addColumn(fieldValue == null ? CommonConstants.NULL_VALUE : fieldValue);
                     }
-                    valueRowBuilder.addColumns(String.valueOf(metric.getValue()));
-                    builder.addValues(valueRowBuilder.build());
+                    valueRowBuilder.addColumn(String.valueOf(metric.getValue()));
+                    builder.addValueRow(valueRowBuilder.build());
                 }
                 metricsDataList.add(builder.build());
             }
@@ -278,7 +276,7 @@ public class PrometheusAutoCollectImpl {
                 if (StringUtils.hasText(authorization.getBasicAuthUsername())
                             && StringUtils.hasText(authorization.getBasicAuthPassword())) {
                     String authStr = authorization.getBasicAuthUsername() + ":" + authorization.getBasicAuthPassword();
-                    String encodedAuth = new String(Base64.encodeBase64(authStr.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8);
+                    String encodedAuth = Base64Util.encode(authStr);
                     requestBuilder.addHeader(HttpHeaders.AUTHORIZATION, DispatchConstants.BASIC + " " + encodedAuth);
                 }
             }
