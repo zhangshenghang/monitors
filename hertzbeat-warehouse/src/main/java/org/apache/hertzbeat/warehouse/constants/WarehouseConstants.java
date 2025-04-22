@@ -56,4 +56,12 @@ public interface WarehouseConstants {
         String MEMORY = "memory";
     }
 
+    String PROMQL = "promql";
+
+    String SQL = "sql";
+
+    String RANGE = "range";
+
+    String INSTANT = "instant";
+
 }

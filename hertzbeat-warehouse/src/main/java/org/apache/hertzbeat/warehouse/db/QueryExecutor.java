@@ -17,6 +17,9 @@
 
 package org.apache.hertzbeat.warehouse.db;
 
+import org.apache.hertzbeat.common.entity.dto.query.DatasourceQuery;
+import org.apache.hertzbeat.common.entity.dto.query.DatasourceQueryData;
+
 import java.util.List;
 import java.util.Map;
 
@@ -24,8 +27,12 @@ import java.util.Map;
  * query executor interface
  */
 public interface QueryExecutor {
-    
+
     List<Map<String, Object>> execute(String query);
     
-    boolean support(String datasource);
+    DatasourceQueryData query(DatasourceQuery datasourceQuery);
+
+    String getDatasource();
+
+    boolean support(String queryLanguage);
 }
