@@ -25,14 +25,22 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.temporal.TemporalAmount;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.google.common.collect.Maps;
 import lombok.AllArgsConstructor;
@@ -48,6 +56,9 @@ import org.apache.hertzbeat.common.constants.SignConstants;
 import org.apache.hertzbeat.common.entity.arrow.RowWrapper;
 import org.apache.hertzbeat.common.entity.dto.Value;
 import org.apache.hertzbeat.common.entity.message.CollectRep;
+import org.apache.hertzbeat.common.timer.HashedWheelTimer;
+import org.apache.hertzbeat.common.timer.Timeout;
+import org.apache.hertzbeat.common.timer.TimerTask;
 import org.apache.hertzbeat.common.util.Base64Util;
 import org.apache.hertzbeat.common.util.CommonUtil;
 import org.apache.hertzbeat.common.util.JsonUtil;
@@ -76,22 +87,32 @@ import static org.apache.hertzbeat.common.constants.ConfigConstants.FunctionModu
 @Slf4j
 public class VictoriaMetricsClusterDataStorage extends AbstractHistoryDataStorage {
 
-    private static final String IMPORT_PATH = "/api/v1/import";
-    private static final String EXPORT_PATH = "/api/v1/export";
-    private static final String STATUS_PATH = "/api/v1/status/tsdb";
+    private static final String VM_INSERT_BASE_PATH = "/insert/%s/%s";
+    private static final String VM_SELECT_BASE_PATH = "/select/%s/%s";
+    private static final String IMPORT_PATH = "prometheus/api/v1/import";
+    private static final String EXPORT_PATH = "prometheus/api/v1/export";
+    private static final String STATUS_PATH = "prometheus/api/v1/status/tsdb";
     private static final String STATUS_SUCCESS = "success";
-    private static final String QUERY_RANGE_PATH = "/api/v1/query_range";
+    private static final String QUERY_RANGE_PATH = "prometheus/api/v1/query_range";
     private static final String LABEL_KEY_NAME = "__name__";
     private static final String LABEL_KEY_JOB = "job";
     private static final String LABEL_KEY_INSTANCE = "instance";
     private static final String SPILT = "_";
     private static final String MONITOR_METRICS_KEY = "__metrics__";
     private static final String MONITOR_METRIC_KEY = "__metric__";
+    private static final long MAX_WAIT_MS = 500L;
+    private static final int MAX_RETRIES = 3;
 
+    private final VictoriaMetricsClusterProperties vmClusterProps;
     private final VictoriaMetricsInsertProperties vmInsertProps;
     private final VictoriaMetricsSelectProperties vmSelectProps;
-
     private final RestTemplate restTemplate;
+    private final BlockingQueue<VictoriaMetricsDataStorage.VictoriaMetricsContent> metricsBufferQueue;
+
+    private HashedWheelTimer metricsFlushTimer = null;
+    private MetricsFlushTask metricsFlushtask = null;
+    private boolean isBatchImportEnabled = false;
+
 
     public VictoriaMetricsClusterDataStorage(VictoriaMetricsClusterProperties vmClusterProps,
                                              RestTemplate restTemplate) {
@@ -100,15 +121,47 @@ public class VictoriaMetricsClusterDataStorage extends AbstractHistoryDataStorag
             throw new IllegalArgumentException("please config Warehouse victoriaMetrics cluster props");
         }
         this.restTemplate = restTemplate;
+        this.vmClusterProps = vmClusterProps;
         this.vmInsertProps = vmClusterProps.insert();
         this.vmSelectProps = vmClusterProps.select();
         serverAvailable = checkVictoriaMetricsDatasourceAvailable();
+        metricsBufferQueue = new LinkedBlockingQueue<>(vmInsertProps.bufferSize());
+        isBatchImportEnabled = vmInsertProps.flushInterval() != 0 && vmInsertProps.bufferSize() != 0;
+        if (isBatchImportEnabled){
+            initializeFlushTimer();
+        }
+    }
+
+    private void initializeFlushTimer() {
+        this.metricsFlushTimer = new HashedWheelTimer(r -> {
+            Thread thread = new Thread(r, "victoria-metrics-flush-timer");
+            thread.setDaemon(true);
+            return thread;
+        }, 1, TimeUnit.SECONDS, 512);
+        metricsFlushtask = new MetricsFlushTask();
+        this.metricsFlushTimer.newTimeout(metricsFlushtask, 0, TimeUnit.SECONDS);
     }
 
     private boolean checkVictoriaMetricsDatasourceAvailable() {
         // check server status
         try {
-            String result = restTemplate.getForObject(vmSelectProps.url() + STATUS_PATH, String.class);
+            String selectNodeStatusUrl = vmClusterProps.select().url() + VM_SELECT_BASE_PATH.formatted(vmClusterProps.accountID(), STATUS_PATH);
+            HttpHeaders headers = new HttpHeaders();
+            if (StringUtils.hasText(vmInsertProps.username())
+                    && StringUtils.hasText(vmInsertProps.password())) {
+                String authStr = vmInsertProps.username() + ":" + vmInsertProps.password();
+                String encodedAuth = Base64Util.encode(authStr);
+                headers.add(HttpHeaders.AUTHORIZATION,  NetworkConstants.BASIC + SignConstants.BLANK + encodedAuth);
+            }
+            HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
+            ResponseEntity<String> responseEntity = restTemplate.exchange(
+                    selectNodeStatusUrl,
+                    HttpMethod.GET,
+                    requestEntity,
+                    String.class
+            );
+
+            String result = responseEntity.getBody();
 
             JsonNode jsonNode = JsonUtil.fromJson(result);
             if (jsonNode != null && STATUS_SUCCESS.equalsIgnoreCase(jsonNode.get(STATUS).asText())) {
@@ -204,45 +257,25 @@ public class VictoriaMetricsClusterDataStorage extends AbstractHistoryDataStorag
                 });
             }
 
-
             if (contentList.isEmpty()) {
                 log.info("[warehouse victoria-metrics] flush metrics data {} is empty, ignore.", metricsData.getId());
                 return;
             }
-
-
-            try {
-                HttpHeaders headers = new HttpHeaders();
-                headers.setContentType(MediaType.APPLICATION_JSON);
-                if (StringUtils.hasText(vmInsertProps.username())
-                        && StringUtils.hasText(vmInsertProps.password())) {
-                    String authStr = vmInsertProps.username() + ":" + vmInsertProps.password();
-                    String encodedAuth = Base64Util.encode(authStr);
-                    headers.add(HttpHeaders.AUTHORIZATION,  NetworkConstants.BASIC + SignConstants.BLANK + encodedAuth);
-                }
-                StringBuilder stringBuilder = new StringBuilder();
-                for (VictoriaMetricsDataStorage.VictoriaMetricsContent content : contentList) {
-                    stringBuilder.append(JsonUtil.toJson(content)).append("\n");
-                }
-                HttpEntity<String> httpEntity = new HttpEntity<>(stringBuilder.toString(), headers);
-                ResponseEntity<String> responseEntity = restTemplate.postForEntity(vmInsertProps.url() + IMPORT_PATH,
-                        httpEntity, String.class);
-                if (responseEntity.getStatusCode().is2xxSuccessful()) {
-                    log.debug("insert metrics data to victoria-metrics success.");
-                } else {
-                    log.error("insert metrics data to victoria-metrics failed. {}", responseEntity.getBody());
-                }
-            } catch (Exception e){
-                log.error("flush metrics data to victoria-metrics error: {}.", e.getMessage(), e);
+            if (!isBatchImportEnabled){
+                doSaveData(contentList);
+                return;
             }
+            sendVictoriaMetrics(contentList);
         } catch (Exception e) {
             log.error("flush metrics data to victoria-metrics error: {}.", e.getMessage(), e);
         }
-
     }
 
     @Override
     public void destroy() {
+        if (metricsFlushTimer != null && !metricsFlushTimer.isStop()) {
+            metricsFlushTimer.stop();
+        }
     }
 
     @Override
@@ -252,9 +285,11 @@ public class VictoriaMetricsClusterDataStorage extends AbstractHistoryDataStorag
         if (CommonConstants.PROMETHEUS.equals(app)) {
             labelName = metrics;
         }
-        String timeSeriesSelector =
-                LABEL_KEY_NAME + "=\"" + labelName + "\"" + "," + LABEL_KEY_INSTANCE + "=\"" + monitorId + "\"" + ","
-                        + (CommonConstants.PROMETHEUS.equals(app) ? "" : "," + MONITOR_METRIC_KEY + "=\"" + metric + "\"");
+        String timeSeriesSelector = Stream.of(
+                LABEL_KEY_NAME + "=\"" + labelName + "\"",
+                LABEL_KEY_INSTANCE + "=\"" + monitorId + "\"",
+                CommonConstants.PROMETHEUS.equals(app) ? null : MONITOR_METRIC_KEY + "=\"" + metric + "\""
+        ).filter(Objects::nonNull).collect(Collectors.joining(","));
         Map<String, List<Value>> instanceValuesMap = new HashMap<>(8);
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -267,11 +302,15 @@ public class VictoriaMetricsClusterDataStorage extends AbstractHistoryDataStorag
                         + SignConstants.BLANK + encodedAuth);
             }
             HttpEntity<Void> httpEntity = new HttpEntity<>(headers);
-            URI uri = UriComponentsBuilder.fromHttpUrl(vmSelectProps.url() + EXPORT_PATH)
-                    .queryParam(URLEncoder.encode("match[]", StandardCharsets.UTF_8),
-                            URLEncoder.encode("{" + timeSeriesSelector + "}", StandardCharsets.UTF_8))
-                    .queryParam("start", URLEncoder.encode("now-" + history, StandardCharsets.UTF_8))
-                    .queryParam("end", "now").build(true).toUri();
+            Instant end = Instant.now();
+            Duration duration = Duration.ofHours(Long.parseLong(history.replace("h", "")));
+            Instant start = end.minus(duration);
+            String exportUrl =  vmClusterProps.select().url() + VM_SELECT_BASE_PATH.formatted(vmClusterProps.accountID(), EXPORT_PATH);
+            URI uri = UriComponentsBuilder.fromHttpUrl(exportUrl)
+                    .queryParam("match", URLEncoder.encode("{" + timeSeriesSelector + "}", StandardCharsets.UTF_8))
+                    .queryParam("start", String.valueOf(start.getEpochSecond()))
+                    .queryParam("end", String.valueOf(end.getEpochSecond()))
+                    .build(true).toUri();
             ResponseEntity<String> responseEntity = restTemplate.exchange(uri, HttpMethod.GET, httpEntity,
                     String.class);
             if (responseEntity.getStatusCode().is2xxSuccessful()) {
@@ -347,9 +386,11 @@ public class VictoriaMetricsClusterDataStorage extends AbstractHistoryDataStorag
         if (CommonConstants.PROMETHEUS.equals(app)) {
             labelName = metrics;
         }
-        String timeSeriesSelector =
-                LABEL_KEY_NAME + "=\"" + labelName + "\"" + "," + LABEL_KEY_INSTANCE + "=\"" + monitorId + "\"" + ","
-                        + (CommonConstants.PROMETHEUS.equals(app) ? "" : "," + MONITOR_METRIC_KEY + "=\"" + metric + "\"");
+        String timeSeriesSelector = Stream.of(
+                LABEL_KEY_NAME + "=\"" + labelName + "\"",
+                LABEL_KEY_INSTANCE + "=\"" + monitorId + "\"",
+                CommonConstants.PROMETHEUS.equals(app) ? null : MONITOR_METRIC_KEY + "=\"" + metric + "\""
+        ).filter(Objects::nonNull).collect(Collectors.joining(","));
         Map<String, List<Value>> instanceValuesMap = new HashMap<>(8);
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -362,10 +403,13 @@ public class VictoriaMetricsClusterDataStorage extends AbstractHistoryDataStorag
                         + SignConstants.BLANK + encodedAuth);
             }
             HttpEntity<Void> httpEntity = new HttpEntity<>(headers);
-            URI uri = UriComponentsBuilder.fromHttpUrl(vmSelectProps.url() + QUERY_RANGE_PATH)
-                    .queryParam(URLEncoder.encode("query", StandardCharsets.UTF_8),
-                            URLEncoder.encode("{" + timeSeriesSelector + "}", StandardCharsets.UTF_8))
-                    .queryParam("step", "4h").queryParam("start", startTime).queryParam("end", endTime).build(true)
+            String rangeUrl = VM_SELECT_BASE_PATH.formatted(vmClusterProps.accountID(), QUERY_RANGE_PATH);
+            URI uri = UriComponentsBuilder.fromHttpUrl(rangeUrl)
+                    .queryParam("query", URLEncoder.encode("{" + timeSeriesSelector + "}", StandardCharsets.UTF_8))
+                    .queryParam("step", "4h")
+                    .queryParam("start", startTime)
+                    .queryParam("end", endTime)
+                    .build(true)
                     .toUri();
             ResponseEntity<PromQlQueryContent> responseEntity = restTemplate.exchange(uri, HttpMethod.GET,
                     httpEntity, PromQlQueryContent.class);
@@ -400,10 +444,12 @@ public class VictoriaMetricsClusterDataStorage extends AbstractHistoryDataStorag
                 log.error("query metrics data from victoria-metrics failed. {}", responseEntity);
             }
             // max
-            uri = UriComponentsBuilder.fromHttpUrl(vmSelectProps.url() + QUERY_RANGE_PATH)
-                    .queryParam(URLEncoder.encode("query", StandardCharsets.UTF_8),
-                            URLEncoder.encode("max_over_time({" + timeSeriesSelector + "})", StandardCharsets.UTF_8))
-                    .queryParam("step", "4h").queryParam("start", startTime).queryParam("end", endTime).build(true)
+            uri = UriComponentsBuilder.fromHttpUrl(rangeUrl)
+                    .queryParam("query", URLEncoder.encode("max_over_time({" + timeSeriesSelector + "})", StandardCharsets.UTF_8))
+                    .queryParam("step", "4h")
+                    .queryParam("start", startTime)
+                    .queryParam("end", endTime)
+                    .build(true)
                     .toUri();
             responseEntity = restTemplate.exchange(uri, HttpMethod.GET, httpEntity, PromQlQueryContent.class);
             if (responseEntity.getStatusCode().is2xxSuccessful()) {
@@ -436,10 +482,12 @@ public class VictoriaMetricsClusterDataStorage extends AbstractHistoryDataStorag
                 }
             }
             // min
-            uri = UriComponentsBuilder.fromHttpUrl(vmSelectProps.url() + QUERY_RANGE_PATH)
-                    .queryParam(URLEncoder.encode("query", StandardCharsets.UTF_8),
-                            URLEncoder.encode("min_over_time({" + timeSeriesSelector + "})", StandardCharsets.UTF_8))
-                    .queryParam("step", "4h").queryParam("start", startTime).queryParam("end", endTime).build(true)
+            uri = UriComponentsBuilder.fromHttpUrl(rangeUrl)
+                    .queryParam("query", URLEncoder.encode("min_over_time({" + timeSeriesSelector + "})", StandardCharsets.UTF_8))
+                    .queryParam("step", "4h")
+                    .queryParam("start", startTime)
+                    .queryParam("end", endTime)
+                    .build(true)
                     .toUri();
             responseEntity = restTemplate.exchange(uri, HttpMethod.GET, httpEntity, PromQlQueryContent.class);
             if (responseEntity.getStatusCode().is2xxSuccessful()) {
@@ -472,10 +520,12 @@ public class VictoriaMetricsClusterDataStorage extends AbstractHistoryDataStorag
                 }
             }
             // avg
-            uri = UriComponentsBuilder.fromHttpUrl(vmSelectProps.url() + QUERY_RANGE_PATH)
-                    .queryParam(URLEncoder.encode("query", StandardCharsets.UTF_8),
-                            URLEncoder.encode("avg_over_time({" + timeSeriesSelector + "})", StandardCharsets.UTF_8))
-                    .queryParam("step", "4h").queryParam("start", startTime).queryParam("end", endTime).build(true)
+            uri = UriComponentsBuilder.fromHttpUrl(rangeUrl)
+                    .queryParam("query", URLEncoder.encode("avg_over_time({" + timeSeriesSelector + "})", StandardCharsets.UTF_8))
+                    .queryParam("step", "4h")
+                    .queryParam("start", startTime)
+                    .queryParam("end", endTime)
+                    .build(true)
                     .toUri();
             responseEntity = restTemplate.exchange(uri, HttpMethod.GET, httpEntity, PromQlQueryContent.class);
             if (responseEntity.getStatusCode().is2xxSuccessful()) {
@@ -511,6 +561,109 @@ public class VictoriaMetricsClusterDataStorage extends AbstractHistoryDataStorag
             log.error("query metrics data from victoria-metrics error. {}.", e.getMessage(), e);
         }
         return instanceValuesMap;
+    }
+
+    /**
+     * Save metric data to victoria-metric via HTTP call
+     */
+    public void doSaveData(List<VictoriaMetricsDataStorage.VictoriaMetricsContent> contentList){
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            if (StringUtils.hasText(vmInsertProps.username())
+                    && StringUtils.hasText(vmInsertProps.password())) {
+                String authStr = vmInsertProps.username() + ":" + vmInsertProps.password();
+                String encodedAuth = Base64Util.encode(authStr);
+                headers.add(HttpHeaders.AUTHORIZATION,  NetworkConstants.BASIC + SignConstants.BLANK + encodedAuth);
+            }
+            StringBuilder stringBuilder = new StringBuilder();
+            for (VictoriaMetricsDataStorage.VictoriaMetricsContent content : contentList) {
+                stringBuilder.append(JsonUtil.toJson(content)).append("\n");
+            }
+            HttpEntity<String> httpEntity = new HttpEntity<>(stringBuilder.toString(), headers);
+            String importUrl = vmClusterProps.insert().url() + VM_INSERT_BASE_PATH.formatted(vmClusterProps.accountID(), IMPORT_PATH);
+            ResponseEntity<String> responseEntity = restTemplate.postForEntity(importUrl,
+                    httpEntity, String.class);
+            if (responseEntity.getStatusCode().is2xxSuccessful()) {
+                log.debug("insert metrics data to victoria-metrics success.");
+            } else {
+                log.error("insert metrics data to victoria-metrics failed. {}", responseEntity.getBody());
+            }
+        } catch (Exception e){
+            log.error("flush metrics data to victoria-metrics error: {}.", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * add victoriaMetricsContent to buffer
+     * @param contentList victoriaMetricsContent List
+     */
+    private void sendVictoriaMetrics(List<VictoriaMetricsDataStorage.VictoriaMetricsContent> contentList) {
+        for (VictoriaMetricsDataStorage.VictoriaMetricsContent content : contentList) {
+            boolean offered = false;
+            int retryCount = 0;
+            while (!offered && retryCount < MAX_RETRIES) {
+                try {
+                    // Attempt to add to the queue for a limited time
+                    offered = metricsBufferQueue.offer(content, MAX_WAIT_MS, TimeUnit.MILLISECONDS);
+                    if (!offered) {
+                        // If the queue is still full, trigger an immediate refresh to free up space
+                        if (retryCount == 0) {
+                            log.debug("victoria metrics buffer queue is full, triggering immediate flush");
+                            triggerImmediateFlush();
+                        }
+                        retryCount++;
+                        // The short sleep allows the queue to clear out
+                        if (retryCount < MAX_RETRIES) {
+                            Thread.sleep(100L * retryCount);
+                        }
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.error("[Victoria Metrics] Interrupted while offering metrics to buffer queue", e);
+                    break;
+                }
+            }
+            // When the maximum number of retries is reached, if it still cannot be added to the queue, the data is saved directly
+            if (!offered) {
+                log.warn("[Victoria Metrics] Failed to add metrics to buffer after {} retries, saving directly", MAX_RETRIES);
+                try {
+                    doSaveData(contentList);
+                } catch (Exception e) {
+                    log.error("[Victoria Metrics] Failed to save metrics directly: {}", e.getMessage(), e);
+                }
+            }
+            // Refresh in advance to avoid waiting
+            if (metricsBufferQueue.size() >= vmInsertProps.bufferSize() * 0.8) {
+                triggerImmediateFlush();
+            }
+        }
+    }
+
+    private void triggerImmediateFlush() {
+        metricsFlushTimer.newTimeout(metricsFlushtask, 0, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Regularly refresh the buffer queue to the vm
+     */
+    private class MetricsFlushTask implements TimerTask {
+        @Override
+        public void run(Timeout timeout) {
+            try {
+                List<VictoriaMetricsDataStorage.VictoriaMetricsContent> batch = new ArrayList<>(vmInsertProps.bufferSize());
+                metricsBufferQueue.drainTo(batch, vmInsertProps.bufferSize());
+                if (!batch.isEmpty()) {
+                    doSaveData(batch);
+                    log.debug("[Victoria Metrics] Flushed {} metrics items", batch.size());
+                }
+                if (metricsFlushTimer != null && !metricsFlushTimer.isStop()) {
+                    metricsFlushTimer.newTimeout(this, vmInsertProps.flushInterval(), TimeUnit.SECONDS);
+                }
+            } catch (Exception e) {
+                log.error("[VictoriaMetrics] flush task error: {}", e.getMessage(), e);
+            }
+        }
     }
 
     /**

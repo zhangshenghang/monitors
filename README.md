@@ -4,9 +4,10 @@
   </a>
 </p>
 
-<h4 align="center">
-<a href="README.md">English Document</a> | <a href="README_CN.md">中文文档</a>
-</h4>
+<p align="center">
+<b>Readme</b>:
+<b><a href="README.md">English</a></b> | <a href="README_CN.md">中文</a> | <a href="README_JP.md">日本語</a>
+</p>
 
 > A real-time monitoring system with agentless, performance cluster, prometheus-compatible, custom monitoring and status page building capabilities.
 
@@ -19,6 +20,7 @@
 [![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/hertzbeat)](https://artifacthub.io/packages/search?repo=hertzbeat)
 [![YouTube Channel Subscribers](https://img.shields.io/youtube/channel/subscribers/UCri75zfWX0GHqJFPENEbLow?logo=youtube&label=YouTube%20Channel)](https://www.youtube.com/channel/UCri75zfWX0GHqJFPENEbLow)
 [![Contribute with Gitpod](https://img.shields.io/badge/Contribute%20with-Gitpod-908a85?logo=gitpod&color=green)](https://gitpod.io/#https://github.com/apache/hertzbeat)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/apache/hertzbeat)
 
 **Home: [hertzbeat.apache.org](https://hertzbeat.apache.org)**   
 **Email: <a href="mailto:dev-subscribe@hertzbeat.apache.org">Mail to `dev-subscribe@hertzbeat.apache.org`</a> to subscribe mailing lists**
@@ -521,6 +523,10 @@ Thanks to these wonderful people, welcome to join us:
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/boyucjz"><img src="https://avatars.githubusercontent.com/u/18730041?v=4?s=100" width="100px;" alt="boyucjz"/><br /><sub><b>boyucjz</b></sub></a><br /><a href="https://github.com/apache/hertzbeat/commits?author=boyucjz" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/Cyanty"><img src="https://avatars.githubusercontent.com/u/153884653?v=4?s=100" width="100px;" alt="Cyanty"/><br /><sub><b>Cyanty</b></sub></a><br /><a href="https://github.com/apache/hertzbeat/commits?author=Cyanty" title="Code">💻</a> <a href="https://github.com/apache/hertzbeat/commits?author=Cyanty" title="Documentation">📖</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/KevinLLF"><img src="https://avatars.githubusercontent.com/u/85452733?v=4?s=100" width="100px;" alt="Jay丿167"/><br /><sub><b>Jay丿167</b></sub></a><br /><a href="https://github.com/apache/hertzbeat/commits?author=KevinLLF" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Duansg"><img src="https://avatars.githubusercontent.com/u/112607719?v=4?s=100" width="100px;" alt="Duansg"/><br /><sub><b>Duansg</b></sub></a><br /><a href="https://github.com/apache/hertzbeat/commits?author=Duansg" title="Documentation">📖</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/xiaomizhou2"><img src="https://avatars.githubusercontent.com/u/47807926?v=4?s=100" width="100px;" alt="zhangyaxi"/><br /><sub><b>zhangyaxi</b></sub></a><br /><a href="https://github.com/apache/hertzbeat/commits?author=xiaomizhou2" title="Code">💻</a> <a href="https://github.com/apache/hertzbeat/commits?author=xiaomizhou2" title="Tests">⚠️</a></td>
     </tr>
   </tbody>
 </table>
@@ -542,7 +548,7 @@ WeChat Group : Add friend `ahertzbeat` and invite to the group.
 
 WeChat Public : Search ID `usthecom`.
 
-[QQ Group](https://jq.qq.com/?_wv=1027&k=Bud9OzdI) : Group num `630061200`
+[QQ Group](https://qm.qq.com/q/xxqecSC2cw) : Group num `1035688434`
 
 [Github Discussion](https://github.com/apache/hertzbeat/discussions)
 

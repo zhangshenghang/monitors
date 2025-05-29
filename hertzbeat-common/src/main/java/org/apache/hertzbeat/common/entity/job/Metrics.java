@@ -30,9 +30,13 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hertzbeat.common.entity.job.protocol.DnsProtocol;
+import org.apache.hertzbeat.common.entity.job.protocol.DnsSdProtocol;
 import org.apache.hertzbeat.common.entity.job.protocol.FtpProtocol;
 import org.apache.hertzbeat.common.entity.job.protocol.HttpProtocol;
+import org.apache.hertzbeat.common.entity.job.protocol.EurekaSdProtocol;
+import org.apache.hertzbeat.common.entity.job.protocol.ConsulSdProtocol;
 import org.apache.hertzbeat.common.entity.job.protocol.ModbusProtocol;
+import org.apache.hertzbeat.common.entity.job.protocol.NacosSdProtocol;
 import org.apache.hertzbeat.common.entity.job.protocol.PlcProtocol;
 import org.apache.hertzbeat.common.entity.job.protocol.RegistryProtocol;
 import org.apache.hertzbeat.common.entity.job.protocol.IcmpProtocol;
@@ -63,17 +67,18 @@ import org.apache.hertzbeat.common.entity.job.protocol.TelnetProtocol;
 import org.apache.hertzbeat.common.entity.job.protocol.UdpProtocol;
 import org.apache.hertzbeat.common.entity.job.protocol.WebsocketProtocol;
 import org.apache.hertzbeat.common.entity.message.CollectRep;
-import org.apache.hertzbeat.common.entity.sd.ServiceDiscoveryProtocol;
-
+import org.apache.hertzbeat.common.entity.job.protocol.ZookeeperSdProtocol;
 /**
  * Details of the monitoring metrics collected
  * eg: cpu | memory | health
  */
+
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
 @Slf4j
+@SuppressWarnings("checkstyle:MemberName")
 public class Metrics {
 
     /**
@@ -260,9 +265,29 @@ public class Metrics {
      */
     private KafkaProtocol kclient;
     /**
-     * Collect sd data protocol
+     * http sd protocol
      */
-    private ServiceDiscoveryProtocol sdProtocol;
+    private HttpProtocol http_sd;
+    /**
+     * dns sd protocol
+     */
+    private DnsSdProtocol dns_sd;
+    /**
+     * eureka sd protocol
+     */
+    private EurekaSdProtocol eureka_sd;
+    /**
+     * consul sd protocol
+     */
+    private ConsulSdProtocol consul_sd;
+    /**
+     * nacos sd protocol
+     */
+    private NacosSdProtocol nacos_sd;
+    /*
+     * zookeeper sd protocol
+     */
+    private ZookeeperSdProtocol zookeeper_sd;
     /**
      * Monitoring configuration information using the public plc protocol
      */

@@ -6,12 +6,13 @@ Thumbs.db
 build/
 out/
 micronaut-cli.yml
-.mvn/
 *.log
 package-lock.json
 *.zip
 jdk/
 data/
+
+!/e2e/**/data/
 
 ### STS ###
 .apt_generated
